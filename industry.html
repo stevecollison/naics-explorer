@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>NAICS Industry Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-6">
+  <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+
+    <!-- Left: Hierarchy Portlet -->
+    <div class="bg-white shadow-lg rounded-lg p-6 flex flex-col">
+      <h2 class="text-xl font-bold mb-4 text-gray-800 text-center">Drill-Down by Hierarchy</h2>
+      <div id="dropdown-container" class="space-y-6"></div>
+      <div id="definition-container" class="mt-6 border-t pt-4 text-gray-700 text-sm"></div>
+    </div>
+
+    <!-- Right: Keyword Search Portlet -->
+    <div class="bg-white shadow-lg rounded-lg p-6 flex flex-col">
+      <h2 class="text-xl font-bold mb-4 text-gray-800 text-center">Keyword Search</h2>
+      <label class="block text-sm font-medium text-gray-600 mb-1">Search industries by keyword</label>
+      <input id="keyword-input" type="text" placeholder="Type keywords like 'grow corn', 'crop', 'soybeans'..."
+        class="w-full px-3 py-2 mb-4 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+      <!-- Search results -->
+      <div class="overflow-y-auto mb-4 max-h-60">
+        <ul id="search-results" class="divide-y divide-gray-200 text-sm text-gray-700"></ul>
+      </div>
+
+      <!-- Definition -->
+      <div id="keyword-definition-container" class="border-t pt-4 text-gray-700 text-sm"></div>
+    </div>
+
+  </div>
+
+  <script>
+    async function loadXML() {
+      try {
+        const response = await fetch('naics_scian_2022_structure_v1_eng.xml');
+        const xmlText = await response.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+        const entries = [...xmlDoc.getElementsByTagName("Entry")].map(entry => ({
+          code: entry.getElementsByTagName("Code")[0].textContent,
+          parent: entry.getElementsByTagName("Parent")[0].textContent.trim(),
+          title: entry.getElementsByTagName("Title")[0].textContent,
+          definition: entry.getElementsByTagName("Definition")[0].textContent
+        }));
+
+        const entryMap = {};
+        const childrenMap = {};
+
+        entries.forEach(entry => {
+          entryMap[entry.code] = entry;
+          if (entry.parent) {
+            if (!childrenMap[entry.parent]) childrenMap[entry.parent] = [];
+            if (!childrenMap[entry.parent].includes(entry.code)) {
+              childrenMap[entry.parent].push(entry.code);
+            }
+          }
+        });
+
+        const container = document.getElementById("dropdown-container");
+        const definitionContainer = document.getElementById("definition-container");
+        const keywordInput = document.getElementById("keyword-input");
+        const keywordResults = document.getElementById("search-results");
+        const keywordDefinitionContainer = document.getElementById("keyword-definition-container");
+
+        function clearDropdownsBelow(level) {
+          const allGroups = container.querySelectorAll(".dropdown-group");
+          allGroups.forEach((group, idx) => {
+            if (idx >= level) group.remove();
+          });
+        }
+
+        function getNextVisibleChildren(code) {
+          let currentCode = code;
+          while (childrenMap[currentCode] && childrenMap[currentCode].length === 1) {
+            const onlyChild = childrenMap[currentCode][0];
+            const parent = entryMap[currentCode];
+            const child = entryMap[onlyChild];
+            if (parent.title === child.title && parent.definition === child.definition) {
+              currentCode = onlyChild;
+            } else {
+              break;
+            }
+          }
+          return childrenMap[currentCode] || [];
+        }
+
+        function createDropdown(parentCode, level = 0) {
+          clearDropdownsBelow(level);
+          definitionContainer.innerHTML = "";
+
+          const options = parentCode
+            ? getNextVisibleChildren(parentCode)
+            : entries.filter(e => !e.parent).map(e => e.code);
+
+          if (options.length === 0) {
+            if (parentCode) {
+              const entry = entryMap[parentCode];
+              definitionContainer.innerHTML = `
+                <h2 class="text-lg font-semibold text-gray-800 mb-2">${entry.code} - ${entry.title}</h2>
+                <p>${entry.definition}</p>`;
+            }
+            return;
+          }
+
+          const group = document.createElement("div");
+          group.className = "dropdown-group";
+
+          const label = document.createElement("label");
+          label.className = "block text-sm font-medium text-gray-600 mb-1";
+          label.textContent = level === 0 ? "Select a Sector" : `Level ${level + 1}`;
+
+          const select = document.createElement("select");
+          select.className = "w-full text-sm";
+          select.innerHTML = `<option value="" selected disabled>-- Select an option --</option>`;
+
+          const uniqueCodes = new Set();
+          options.forEach(code => {
+            if (!uniqueCodes.has(code)) {
+              uniqueCodes.add(code);
+              const entry = entryMap[code];
+              const opt = document.createElement("option");
+              opt.value = code;
+              opt.textContent = `${entry.code} - ${entry.title}`;
+              select.appendChild(opt);
+            }
+          });
+
+          group.appendChild(label);
+          group.appendChild(select);
+          container.appendChild(group);
+
+          new TomSelect(select, {
+            allowEmptyOption: true,
+            placeholder: "Start typing to search...",
+            onChange: function (value) {
+              clearDropdownsBelow(level + 1);
+              definitionContainer.innerHTML = "";
+              if (value) {
+                createDropdown(value, level + 1);
+              }
+            }
+          });
+        }
+
+        createDropdown(null);
+
+        // Keyword Search with Fuse.js
+        const seen = new Set();
+        const leafEntries = entries.filter(e => !childrenMap[e.code] || childrenMap[e.code].length === 0)
+          .filter(e => {
+            const key = `${e.title}||${e.definition}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+        const fuse = new Fuse(leafEntries, {
+          keys: ['code', 'title', 'definition'],
+          includeScore: true,
+          threshold: 0.4
+        });
+
+        keywordInput.addEventListener("input", () => {
+          const query = keywordInput.value.trim();
+          keywordResults.innerHTML = "";
+          keywordDefinitionContainer.innerHTML = "";
+
+          if (query.length === 0) return;
+
+          const results = fuse.search(query).slice(0, 10);
+          results.forEach(result => {
+            const li = document.createElement("li");
+            li.className = "py-2 px-3 hover:bg-blue-50 cursor-pointer rounded";
+            li.innerHTML = `<strong>${result.item.code}</strong> - ${result.item.title}`;
+            li.addEventListener("click", () => {
+              let path = [result.item.title];
+              let current = result.item;
+              while (current.parent && entryMap[current.parent]) {
+                current = entryMap[current.parent];
+                path.unshift(current.title);
+              }
+              // Format as Level 1: ..., Level 2: ..., etc.
+              const fullPath = [];
+                let pathNode = result.item;
+
+                while (pathNode) {
+                fullPath.unshift(pathNode); // unshift builds path top-down
+                pathNode = pathNode.parent && entryMap[pathNode.parent];
+                }
+
+                const pathLines = fullPath.map((node, index) => `Level ${index + 1}: [${node.code}] ${node.title}`);
+                const formattedPath = pathLines.join("<br>");
+
+
+                keywordDefinitionContainer.innerHTML = `
+                <h2 class="text-lg font-semibold text-gray-800 mb-2">${result.item.code} - ${result.item.title}</h2>
+                <p class="text-sm text-gray-500 mb-2"><strong>Hierarchy Path:</strong><br>${formattedPath}</p>
+                <p>${result.item.definition}</p>
+                `;
+
+              keywordResults.innerHTML = "";
+              keywordInput.value = `${result.item.code} - ${result.item.title}`;
+            });
+            keywordResults.appendChild(li);
+          });
+        });
+
+      } catch (error) {
+        console.error("Failed to load XML:", error);
+      }
+    }
+
+    loadXML();
+  </script>
+</body>
+</html>
