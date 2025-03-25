@@ -2,41 +2,95 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>NAICS Industry Explorer</title>
+  <title>NAICS Explorer</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
 </head>
-<body class="bg-gray-100 min-h-screen p-6">
-  <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+<body class="bg-gray-100 min-h-screen">
 
-    <!-- Left: Hierarchy Portlet -->
-    <div class="bg-white shadow-lg rounded-lg p-6 flex flex-col">
-      <h2 class="text-xl font-bold mb-4 text-gray-800 text-center">Drill-Down by Hierarchy</h2>
-      <div id="dropdown-container" class="space-y-6"></div>
-      <div id="definition-container" class="mt-6 border-t pt-4 text-gray-700 text-sm"></div>
+  <!-- Nav Bar -->
+  <nav class="bg-white shadow-sm border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+    <div class="flex items-center text-gray-800 font-semibold text-lg tracking-tight">
+      <span class="text-xl mr-2">🔍📊</span>
+      NAICS Explorer
     </div>
+    <div class="block md:hidden">
+      <button onclick="showTab('drill')" class="text-sm px-3 py-1 rounded-full border border-gray-300 mr-2 hover:bg-blue-100 text-gray-700 transition">
+        Drill Down
+      </button>
+      <button onclick="showTab('search')" class="text-sm px-3 py-1 rounded-full border border-gray-300 hover:bg-blue-100 text-gray-700 transition">
+        Keyword Search
+      </button>
+    </div>
+  </nav>
+  
 
-    <!-- Right: Keyword Search Portlet -->
-    <div class="bg-white shadow-lg rounded-lg p-6 flex flex-col">
-      <h2 class="text-xl font-bold mb-4 text-gray-800 text-center">Keyword Search</h2>
-      <label class="block text-sm font-medium text-gray-600 mb-1">Search industries by keyword</label>
-      <input id="keyword-input" type="text" placeholder="Type keywords like 'air traffic control', 'crop', 'soybeans'..."
-        class="w-full px-3 py-2 mb-4 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-
-      <!-- Search results -->
-      <div class="overflow-y-auto mb-4 max-h-60">
-        <ul id="search-results" class="divide-y divide-gray-200 text-sm text-gray-700"></ul>
+  <!-- Content -->
+  <div class="max-w-7xl mx-auto p-6">
+    <div class="flex flex-col md:flex-row gap-6">
+      <!-- Drill Down Portlet -->
+      <div id="tab-drill" class="w-full md:w-1/2 block transition-all duration-300 ease-in-out opacity-100">
+        <div class="bg-white shadow-lg rounded-lg p-6 flex flex-col h-full">
+          <h2 class="text-xl font-bold mb-4 text-gray-800 text-center">Drill-Down by Hierarchy</h2>
+          <div id="dropdown-container" class="space-y-6"></div>
+          <div id="definition-container" class="mt-6 border-t pt-4 text-gray-700 text-sm"></div>
+        </div>
       </div>
-
-      <!-- Definition -->
-      <div id="keyword-definition-container" class="border-t pt-4 text-gray-700 text-sm"></div>
+  
+      <!-- Keyword Search Portlet -->
+      <div id="tab-search" class="w-full md:w-1/2 block transition-all duration-300 ease-in-out opacity-100">
+        <div class="bg-white shadow-lg rounded-lg p-6 flex flex-col h-full">
+          <h2 class="text-xl font-bold mb-4 text-gray-800 text-center">Keyword Search</h2>
+          <label class="block text-sm font-medium text-gray-600 mb-1">Search industries by keyword</label>
+          <input id="keyword-input" type="text" placeholder="Type keywords like 'goat farming', 'crop', 'soybeans'..."
+            class="w-full px-3 py-2 mb-4 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <div class="overflow-y-auto mb-4 max-h-60">
+            <ul id="search-results" class="divide-y divide-gray-200 text-sm text-gray-700"></ul>
+          </div>
+          <div id="keyword-definition-container" class="border-t pt-4 text-gray-700 text-sm"></div>
+        </div>
+      </div>
     </div>
-
   </div>
+  
 
   <script>
+    // Responsive tab switcher
+          function showTab(tab) {
+        lastSelectedTab = tab;
+        const isMobile = window.innerWidth < 768;
+
+        const drill = document.getElementById("tab-drill");
+        const search = document.getElementById("tab-search");
+
+        if (isMobile) {
+          const hide = tab === 'drill' ? search : drill;
+          const show = tab === 'drill' ? drill : search;
+
+          // Hide current
+          hide.style.opacity = 0;
+          setTimeout(() => {
+            hide.style.display = "none";
+
+            // Show new
+            show.style.display = "block";
+            setTimeout(() => {
+              show.style.opacity = 1;
+            }, 10);
+          }, 200); // wait for fade-out
+        } else {
+          // Desktop: show both
+          drill.style.display = "block";
+          search.style.display = "block";
+          drill.style.opacity = 1;
+          search.style.opacity = 1;
+        }
+      }
+
+
+
     async function loadXML() {
       try {
         const response = await fetch('naics_scian_2022_structure_v1_eng.xml');
@@ -165,14 +219,13 @@
         const fuse = new Fuse(leafEntries, {
           keys: ['code', 'title', 'definition'],
           includeScore: true,
-          threshold: 0.4
+          threshold: 0.6
         });
 
         keywordInput.addEventListener("input", () => {
           const query = keywordInput.value.trim();
           keywordResults.innerHTML = "";
           keywordDefinitionContainer.innerHTML = "";
-
           if (query.length === 0) return;
 
           const results = fuse.search(query).slice(0, 10);
@@ -181,31 +234,20 @@
             li.className = "py-2 px-3 hover:bg-blue-50 cursor-pointer rounded";
             li.innerHTML = `<strong>${result.item.code}</strong> - ${result.item.title}`;
             li.addEventListener("click", () => {
-              let path = [result.item.title];
-              let current = result.item;
-              while (current.parent && entryMap[current.parent]) {
-                current = entryMap[current.parent];
-                path.unshift(current.title);
-              }
-              // Format as Level 1: ..., Level 2: ..., etc.
               const fullPath = [];
-                let pathNode = result.item;
-
-                while (pathNode) {
-                fullPath.unshift(pathNode); // unshift builds path top-down
+              let pathNode = result.item;
+              while (pathNode) {
+                fullPath.unshift(pathNode);
                 pathNode = pathNode.parent && entryMap[pathNode.parent];
-                }
+              }
+              const pathLines = fullPath.map((node, index) => `Level ${index + 1}: [${node.code}] ${node.title}`);
+              const formattedPath = pathLines.join("<br>");
 
-                const pathLines = fullPath.map((node, index) => `Level ${index + 1}: [${node.code}] ${node.title}`);
-                const formattedPath = pathLines.join("<br>");
-
-
-                keywordDefinitionContainer.innerHTML = `
+              keywordDefinitionContainer.innerHTML = `
                 <h2 class="text-lg font-semibold text-gray-800 mb-2">${result.item.code} - ${result.item.title}</h2>
                 <p class="text-sm text-gray-500 mb-2"><strong>Hierarchy Path:</strong><br>${formattedPath}</p>
                 <p>${result.item.definition}</p>
-                `;
-
+              `;
               keywordResults.innerHTML = "";
               keywordInput.value = `${result.item.code} - ${result.item.title}`;
             });
@@ -220,5 +262,41 @@
 
     loadXML();
   </script>
+  <script>
+    let lastSelectedTab = 'drill';
+  
+    function showTab(tab) {
+      lastSelectedTab = tab;
+      const isMobile = window.innerWidth < 768;
+  
+      if (isMobile) {
+        document.getElementById("tab-drill").style.display = tab === "drill" ? "block" : "none";
+        document.getElementById("tab-search").style.display = tab === "search" ? "block" : "none";
+      } else {
+        // Always show both on desktop
+        document.getElementById("tab-drill").style.display = "block";
+        document.getElementById("tab-search").style.display = "block";
+      }
+    }
+  
+    // Handle window resizing
+    window.addEventListener('resize', () => {
+      const isMobile = window.innerWidth < 768;
+      if (isMobile) {
+        // Show only the last selected tab on mobile
+        showTab(lastSelectedTab);
+      } else {
+        // Show both on desktop
+        document.getElementById("tab-drill").style.display = "block";
+        document.getElementById("tab-search").style.display = "block";
+      }
+    });
+  
+    // Initial load: show only drill on mobile, both on desktop
+    window.addEventListener('DOMContentLoaded', () => {
+      showTab('drill');
+    });
+  </script>
+  
 </body>
 </html>
